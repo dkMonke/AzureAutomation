@@ -1,0 +1,47 @@
+#region Pre-Requisites
+#Set-Location $env:SystemDrive\Labs\Module3
+Set-Location "C:\Users\Dinesh\Downloads\Students\Labs\Module3"
+Import-Module -FullyQualifiedName .\AzureAutomationHelper\AzureAutomationHelper.psm1
+$variables = Get-Content .\Variables.json | ConvertFrom-Json | ConvertPSObjectToHashtable
+Write-Output $variables
+#endregion Pre-Requisites
+
+#region Exercise 1 - Logging in to Microsoft Azure
+Login-AzureRmAccount
+#endregion 
+
+#region Exercise 2 - Resource Groups
+$location = "southeastasia"
+Add-ValueToVariable -Hashtable $variables -Name Location -Value $location
+New-AzureRmResourceGroup -Name $variables.ResourceGroupName -Location $location -Verbose
+#endregion Exercise 2 - Resource Groups
+
+#region Exercise 3 - Automation Account Creation
+New-AzureRmAutomationAccount -ResourceGroupName $variables.ResourceGroupName -Name $variables.AutomationAccountName -Location $variables.Location -Verbose -Plan Free
+.\New-RunAsAccount.ps1 -ResourceGroup $variables.ResourceGroupName `
+    -AutomationAccountName $variables.AutomationAccountName `
+    -SubscriptionId (Get-AzureRmSubscription)[0].Id `
+    -ApplicationDisplayName "AA_$((New-Guid).Guid)" `
+    -SelfSignedCertPlainPassword "AA_$((New-Guid).Guid)" `
+    -CreateClassicRunAsAccount $false
+$automationAccount = Get-AzureRmAutomationAccount -ResourceGroupName $Variables.ResourceGroupName -Name $variables.AutomationAccountName
+Write-Output $automationAccount | Select-Object -Property *
+#endregion Exercise 3 - Automation Account Creation
+
+#region Exercise 4 - Importing a runbook
+$automationAccount | Import-AzureRmAutomationRunbook -Name "Contoso_PowerShell_Script" -Path .\Contoso_PowerShell_Script.ps1 -Type PowerShell
+#endregion Exercise 4 - Importing a runbook
+
+#region Exercise 5 - Assets
+$adminCred = Get-Credential -Message "Enter the password for the VM local administrator account" -UserName $variables.LocalUserName
+$domainCred = Get-Credential -Message "Enter the password for the domain administrator" -UserName $variables.DomainUserName
+$automationAccount | New-AzureRmAutomationVariable -Name DomainName -Value $variables.DomainName -Description "Domain Name" -Verbose -Encrypted $false
+$automationAccount | New-AzureRmAutomationCredential -Name DomainUserName -Value $domainCred -Verbose
+$automationAccount | New-AzureRmAutomationCredential -Name LocalUserName -Value $adminCred -Verbose
+Add-ValueToVariable -Hashtable $variables -Name LocalPassword -Value ($adminCred.GetNetworkCredential().Password) | Out-Null
+Add-ValueToVariable -Hashtable $variables -Name DomainPassword -Value ($adminCred.GetNetworkCredential().Password) | Out-Null
+#endregion Exercise 5 - Assets
+
+#region SAVE VARIABLES
+Save-VariablesToFile -Hashtable $variables -Path .\Variables.json
+#endregion SAVE VARIABLES
